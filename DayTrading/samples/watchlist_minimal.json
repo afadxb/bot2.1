@@ -1,0 +1,37 @@
+[
+  {
+    "symbol": "AAPL",
+    "sector": "Technology",
+    "price": 182.12,
+    "rel_volume": 1.4,
+    "gap_pct": 1.2,
+    "features": {
+      "relvol": 1.5,
+      "float_band": "mid",
+      "short_float": 0.02
+    }
+  },
+  {
+    "symbol": "MSFT",
+    "industry": "Software",
+    "price": 310.50,
+    "change_pct": 0.5,
+    "rel_volume": 1.1,
+    "features": {
+      "relvol": 1.1,
+      "news_fresh": true
+    }
+  },
+  {
+    "symbol": "TSLA",
+    "sector": "Automotive",
+    "price": 250.20,
+    "rel_volume": 2.0,
+    "gap_pct": -1.0,
+    "features": {
+      "relvol": 2.2,
+      "after_hours": -0.5,
+      "analyst": "downgrade"
+    }
+  }
+]
