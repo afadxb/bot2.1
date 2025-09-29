@@ -1,0 +1,32 @@
+timeframes:
+  intraday_bars: "5m"
+  secondary_bars: "15m"
+
+signals:
+  ema_fast: 9
+  ema_slow: 21
+  vwap_enforce: true
+  vol_spike_mult: 2.0
+  consolidation_lookback: 20
+
+catalysts:
+  freshness_hours: 6
+  require_any: true
+
+ranking:
+  base_weight_rules: 0.6
+  weight_ai: 0.3
+  weight_sector: 0.1
+  top_k_execute: 20
+
+risk:
+  risk_pct_per_trade: 1.0
+  stop_mode: "ema21_or_swing"
+  atr_mult: 1.5
+  scale1_pct: 4.0
+  target_pct: 8.0
+
+controls:
+  max_trades_per_day: 8
+  daily_drawdown_halt_pct: 4.0
+  flatten_et: "15:55"
