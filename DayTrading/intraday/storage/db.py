@@ -29,7 +29,53 @@ class Database:
         """Apply the Phase 2 schema to the configured database."""
 
         with self._lock:
+            self._apply_phase2_backfills()
             self.conn.executescript(PHASE2_SCHEMA)
+
+    def _apply_phase2_backfills(self) -> None:
+        """Bring forward legacy Phase 1 tables so Phase 2 migrations succeed."""
+
+        # ``bars_intraday`` is the only Phase 2 table that previously existed in a
+        # reduced form.  Older deployments stored the candle timestamp in a column
+        # named ``timestamp`` and lacked the ``source``/``run_date`` metadata
+        # fields.  The Phase 2 DDL expects the canonical ``ts`` column and the new
+        # metadata columns, so we proactively reshape existing databases to match
+        # the upgraded layout before we execute ``PHASE2_SCHEMA``.
+        cur = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='bars_intraday'"
+        )
+        if cur.fetchone() is None:
+            return
+
+        cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+        columns = {row[1] for row in cur.fetchall()}
+
+        if "ts" not in columns and "timestamp" in columns:
+            # ``ALTER TABLE .. RENAME COLUMN`` fails when dependent views reference
+            # the legacy column, so drop any Phase 1 views that might still exist
+            # before renaming.
+            self.conn.execute("DROP VIEW IF EXISTS v_latest_bars")
+            self.conn.execute("DROP VIEW IF EXISTS v_focus_symbols")
+            # Drop legacy indexes that referenced the old column name so the Phase
+            # 2 schema can recreate them with the new layout.
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_symbol_timeframe_timestamp")
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_symbol_tf_timestamp")
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_timestamp")
+            self.conn.execute("ALTER TABLE bars_intraday RENAME COLUMN timestamp TO ts")
+
+            cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+            columns = {row[1] for row in cur.fetchall()}
+
+        additions = (
+            ("source", "ALTER TABLE bars_intraday ADD COLUMN source TEXT DEFAULT 'IBKR'"),
+            ("run_date", "ALTER TABLE bars_intraday ADD COLUMN run_date TEXT"),
+        )
+        for column_name, ddl in additions:
+            if column_name not in columns:
+                self.conn.execute(ddl)
+                columns.add(column_name)
+
+        self.conn.commit()
 
     # Generic helpers ---------------------------------------------------
     def execute(self, sql: str, params: Sequence | None = None) -> sqlite3.Cursor:
