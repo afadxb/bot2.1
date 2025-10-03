@@ -48,8 +48,10 @@ poetry run python main.py
 
 ### Watchlist Ingestion
 
-Drop your daily JSON file (matching the schema in `samples/watchlist_minimal.json`) and point the
-`WATCHLIST_FILE` environment variable at it. You can manually import the file with:
+Point `WATCHLIST_DB_PATH` at the shared pre-market SQLite database and the engine will pull the
+latest symbols directly. The loader logs whether it read from SQLite or a JSON file so you can
+confirm the source during troubleshooting. If you receive a JSON export instead, you can manually
+import it into the engine's SQLite store with:
 
 ```bash
 poetry run python scripts/import_watchlist.py --path ./incoming/full_watchlist.json
@@ -72,8 +74,9 @@ poetry run black --check .
 
 ### Troubleshooting
 
-- **Missing watchlist file** – Ensure `WATCHLIST_FILE` points to a readable JSON file or provide a
-  fallback glob via `WATCHLIST_GLOB`.
+- **Missing watchlist data** – Ensure `WATCHLIST_DB_PATH` points to the shared SQLite database. If
+  you're importing JSON manually, run `scripts/import_watchlist.py` first so the latest symbols are
+  present in the local store.
 - **Empty symbols** – The loader requires a non-empty string `symbol`. Duplicate symbols are
   deduplicated with a log entry.
 - **DB permissions** – The SQLite file is created at `SQLITE_PATH`; ensure the directory exists and

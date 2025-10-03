@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import glob
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 from .utils.time import ET
 
@@ -17,8 +15,7 @@ class AppSettings:
     run_mode: str = "once"
     tz: str = "America/Toronto"
     simulation: bool = True
-    watchlist_file: str | None = None
-    watchlist_glob: str | None = None
+    watchlist_db_path: str | None = None
     watchlist_symbol_key: str = "symbol"
     sqlite_path: str = "var/daytrading.db"
     ema_fast: int = 9
@@ -53,8 +50,7 @@ class AppSettings:
 
         self.tz = env("TZ", self.tz)
         self.simulation = env("SIMULATION", str(self.simulation)).lower() == "true"
-        self.watchlist_file = env("WATCHLIST_FILE", self.watchlist_file)
-        self.watchlist_glob = env("WATCHLIST_GLOB", self.watchlist_glob)
+        self.watchlist_db_path = env("WATCHLIST_DB_PATH", self.watchlist_db_path)
         self.watchlist_symbol_key = env("WATCHLIST_SYMBOL_KEY", self.watchlist_symbol_key)
         self.sqlite_path = env("SQLITE_PATH", self.sqlite_path)
 
@@ -103,18 +99,6 @@ class AppSettings:
     def flatten_dt_today(self) -> datetime:
         hour, minute = map(int, self.flatten_et.split(":"))
         return datetime.now(tz=ET).replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-    def watchlist_path(self) -> Path:
-        if self.watchlist_file:
-            candidate = Path(self.watchlist_file)
-            if candidate.exists():
-                return candidate
-        if self.watchlist_glob:
-            matches = sorted(glob.glob(self.watchlist_glob))
-            if matches:
-                return Path(matches[-1])
-        raise FileNotFoundError("No watchlist file found")
-
 
 def load_settings() -> AppSettings:
     return AppSettings()
