@@ -29,7 +29,134 @@ class Database:
         """Apply the Phase 2 schema to the configured database."""
 
         with self._lock:
+            self._apply_phase2_backfills()
             self.conn.executescript(PHASE2_SCHEMA)
+
+    def _apply_phase2_backfills(self) -> None:
+        """Bring forward legacy Phase 1 tables so Phase 2 migrations succeed."""
+
+        # ``bars_intraday`` is the only Phase 2 table that previously existed in a
+        # reduced form.  Older deployments stored the candle timestamp in a column
+        # named ``timestamp`` and lacked the ``source``/``run_date`` metadata
+        # fields.  The Phase 2 DDL expects the canonical ``ts`` column and the new
+        # metadata columns, so we proactively reshape existing databases to match
+        # the upgraded layout before we execute ``PHASE2_SCHEMA``.
+        cur = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='bars_intraday'"
+        )
+        if cur.fetchone() is None:
+            return
+
+        cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+        columns = {row[1] for row in cur.fetchall()}
+
+        if "ts" not in columns and "timestamp" in columns:
+            # ``ALTER TABLE .. RENAME COLUMN`` fails when dependent views reference
+            # the legacy column, so drop any Phase 1 views that might still exist
+            # before renaming.
+            self.conn.execute("DROP VIEW IF EXISTS v_latest_bars")
+            self.conn.execute("DROP VIEW IF EXISTS v_focus_symbols")
+            # Drop legacy indexes that referenced the old column name so the Phase
+            # 2 schema can recreate them with the new layout.
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_symbol_timeframe_timestamp")
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_symbol_tf_timestamp")
+            self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_timestamp")
+
+            renamed = False
+            try:
+                self.conn.execute("ALTER TABLE bars_intraday RENAME COLUMN timestamp TO ts")
+                renamed = True
+            except sqlite3.OperationalError:
+                # Older SQLite versions bundled with Python on Windows do not
+                # support renaming individual columns.  We'll rebuild the table
+                # below if the rename fails.
+                self.conn.rollback()
+
+            cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+            columns = {row[1] for row in cur.fetchall()}
+
+            if "ts" not in columns:
+                self._rebuild_bars_intraday_with_ts()
+                renamed = True
+
+            if not renamed:
+                # Guard against unexpected schema layouts so we fail loudly
+                # instead of running migrations against a broken table.
+                raise sqlite3.OperationalError(
+                    "Unable to backfill legacy bars_intraday table to include ts column"
+                )
+
+            cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+            columns = {row[1] for row in cur.fetchall()}
+
+        additions = (
+            ("source", "ALTER TABLE bars_intraday ADD COLUMN source TEXT DEFAULT 'IBKR'"),
+            ("run_date", "ALTER TABLE bars_intraday ADD COLUMN run_date TEXT"),
+        )
+        for column_name, ddl in additions:
+            if column_name not in columns:
+                self.conn.execute(ddl)
+                columns.add(column_name)
+
+        self.conn.commit()
+
+    def _rebuild_bars_intraday_with_ts(self) -> None:
+        """Rebuild the legacy ``bars_intraday`` table to add the ``ts`` column."""
+
+        cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
+        legacy_columns = {row[1] for row in cur.fetchall()}
+
+        # Preserve the legacy data by renaming the table and copying rows into the
+        # freshly rebuilt Phase 2 layout.
+        self.conn.execute("ALTER TABLE bars_intraday RENAME TO bars_intraday_legacy")
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bars_intraday (
+              symbol TEXT NOT NULL,
+              timeframe TEXT NOT NULL,
+              ts TEXT NOT NULL,
+              open REAL NOT NULL,
+              high REAL NOT NULL,
+              low REAL NOT NULL,
+              close REAL NOT NULL,
+              volume REAL NOT NULL,
+              vwap REAL,
+              source TEXT DEFAULT 'IBKR',
+              run_date TEXT,
+              PRIMARY KEY (symbol, timeframe, ts)
+            )
+            """
+        )
+
+        def _column(name: str, default: str) -> str:
+            return name if name in legacy_columns else default
+
+        self.conn.execute(
+            """
+            INSERT INTO bars_intraday (
+              symbol, timeframe, ts, open, high, low, close, volume, vwap, source, run_date
+            )
+            SELECT
+              symbol,
+              timeframe,
+              timestamp,
+              open,
+              high,
+              low,
+              close,
+              volume,
+              %s,
+              %s,
+              %s
+            FROM bars_intraday_legacy
+            """
+            % (
+                _column("vwap", "NULL"),
+                _column("source", "'IBKR'"),
+                _column("run_date", "NULL"),
+            )
+        )
+        self.conn.execute("DROP TABLE bars_intraday_legacy")
 
     # Generic helpers ---------------------------------------------------
     def execute(self, sql: str, params: Sequence | None = None) -> sqlite3.Cursor:
