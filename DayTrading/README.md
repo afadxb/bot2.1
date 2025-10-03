@@ -49,8 +49,9 @@ poetry run python main.py
 ### Watchlist Ingestion
 
 Point `WATCHLIST_DB_PATH` at the shared pre-market SQLite database and the engine will pull the
-latest symbols directly. If you receive a JSON export instead, you can manually import it into the
-engine's SQLite store with:
+latest symbols directly. The loader logs whether it read from SQLite or a JSON file so you can
+confirm the source during troubleshooting. If you receive a JSON export instead, you can manually
+import it into the engine's SQLite store with:
 
 ```bash
 poetry run python scripts/import_watchlist.py --path ./incoming/full_watchlist.json

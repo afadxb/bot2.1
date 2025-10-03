@@ -56,17 +56,23 @@ class WatchlistLoader:
         self, path: Path | None = None
     ) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
         if path is not None:
+            logger.info("Loading watchlist from JSON file: %s", path)
             return self._load_from_json(path)
 
         db_path = self.settings.watchlist_db_path
         if not db_path:
+            logger.error(
+                "WATCHLIST_DB_PATH is not configured; unable to load watchlist database"
+            )
             raise ValueError(
                 "WATCHLIST_DB_PATH must be configured when no explicit watchlist path is provided"
             )
 
         candidate = Path(db_path)
         if not candidate.exists():
+            logger.error("Watchlist database not found at path: %s", candidate)
             raise FileNotFoundError(f"Watchlist database not found: {candidate}")
+        logger.info("Loading watchlist from SQLite database: %s", candidate)
         return self._load_from_sqlite(candidate)
 
     def _load_from_json(
@@ -274,7 +280,11 @@ class WatchlistLoader:
         flat_map: Dict[str, Dict[str, object]],
     ) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
         run_ts = time_utils.to_epoch_seconds(time_utils.now_et())
-        run_id = self.db.insert_watchlist_run(run_ts, source, len(deduped))
+        row_count = len(deduped)
+        run_id = self.db.insert_watchlist_run(run_ts, source, row_count)
+        logger.info(
+            "Persisted watchlist run %s from %s with %d symbols", run_id, source, row_count
+        )
         self.db.insert_watchlist_items(
             run_id, ((symbol, payload) for symbol, payload in deduped.items())
         )
