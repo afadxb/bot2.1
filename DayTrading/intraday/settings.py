@@ -42,6 +42,16 @@ class AppSettings:
     pushover_user_key: str | None = None
     pushover_api_token: str | None = None
     log_cfg: str = "config/logging.yaml"
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 4002
+    ibkr_client_id: int = 1776
+    ibkr_exchange: str = "SMART"
+    ibkr_primary_exchange: str | None = None
+    ibkr_currency: str = "USD"
+    ibkr_use_rth: bool = True
+    ibkr_connect_timeout: float = 4.0
+    ibkr_historical_duration_5m: str = "2 D"
+    ibkr_historical_duration_15m: str = "5 D"
 
     def __post_init__(self) -> None:
         env = os.getenv
@@ -93,6 +103,21 @@ class AppSettings:
         self.pushover_user_key = env("PUSHOVER_USER_KEY", self.pushover_user_key)
         self.pushover_api_token = env("PUSHOVER_API_TOKEN", self.pushover_api_token)
         self.log_cfg = env("LOG_CFG", self.log_cfg)
+        self.ibkr_host = env("IBKR_HOST", self.ibkr_host)
+        self.ibkr_port = int(env("IBKR_PORT", str(self.ibkr_port)))
+        self.ibkr_client_id = int(env("IBKR_CLIENT_ID", str(self.ibkr_client_id)))
+        self.ibkr_exchange = env("IBKR_EXCHANGE", self.ibkr_exchange)
+        primary_exchange = env("IBKR_PRIMARY_EXCHANGE", self.ibkr_primary_exchange or "")
+        self.ibkr_primary_exchange = primary_exchange or None
+        self.ibkr_currency = env("IBKR_CURRENCY", self.ibkr_currency)
+        self.ibkr_use_rth = env("IBKR_USE_RTH", str(self.ibkr_use_rth)).lower() == "true"
+        self.ibkr_connect_timeout = float(env("IBKR_CONNECT_TIMEOUT", str(self.ibkr_connect_timeout)))
+        self.ibkr_historical_duration_5m = env(
+            "IBKR_HIST_DURATION_5M", self.ibkr_historical_duration_5m
+        )
+        self.ibkr_historical_duration_15m = env(
+            "IBKR_HIST_DURATION_15M", self.ibkr_historical_duration_15m
+        )
 
         hour_minute = self.flatten_et.split(":")
         if len(hour_minute) != 2:

@@ -63,6 +63,24 @@ When `SIMULATION=true`, the engine uses deterministic data feeds and order execu
 safe to run without an IBKR connection while still exercising the full pipeline. Set
 `SIMULATION=false` only when an IBKR gateway is available and you have configured credentials.
 
+To enable live IBKR collection you must install the optional `ib-insync` dependency and expose your
+gateway via environment variables:
+
+```bash
+poetry add ib-insync --optional
+
+export SIMULATION=false
+export IBKR_HOST=127.0.0.1
+export IBKR_PORT=4002          # 4002 for paper gateway, 4001 for live
+export IBKR_CLIENT_ID=1776     # Any unique client id
+export IBKR_EXCHANGE=SMART
+export IBKR_CURRENCY=USD
+```
+
+Additional knobs include `IBKR_PRIMARY_EXCHANGE`, `IBKR_USE_RTH`, and historical durations for 5m
+and 15m requests via `IBKR_HIST_DURATION_5M` and `IBKR_HIST_DURATION_15M` respectively. The engine
+will connect, qualify each symbol, and persist returned bars into SQLite.
+
 ### Testing and Linting
 
 ```bash

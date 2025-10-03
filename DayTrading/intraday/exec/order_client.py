@@ -23,5 +23,5 @@ class OrderClient:
 
         slippage = 0.001 if side.upper() == "BUY" else -0.001
         fill_price = limit_price * (1 + slippage)
-        logger.info("Simulated %s order for %s @ %.2f (limit %.2f)", side, symbol, fill_price, limit_price)
+        logger.info("%s order fill for %s @ %.2f (limit %.2f)", side, symbol, fill_price, limit_price)
         return {"status": "FILLED", "avg_fill_price": fill_price}

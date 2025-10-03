@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Dict, Iterable, List
 
 from ..settings import AppSettings
@@ -18,15 +18,115 @@ class IBKRFeed:
         self.settings = settings
         self.db = db
 
+    def _duration_for(self, tf: str) -> str:
+        if tf == "5m":
+            return self.settings.ibkr_historical_duration_5m
+        if tf == "15m":
+            return self.settings.ibkr_historical_duration_15m
+        raise ValueError(f"Unsupported timeframe {tf}")
+
+    def _bar_size_for(self, tf: str) -> str:
+        if tf == "5m":
+            return "5 mins"
+        if tf == "15m":
+            return "15 mins"
+        raise ValueError(f"Unsupported timeframe {tf}")
+
+    def _build_contract(self, symbol: str):
+        from ib_insync import Stock  # type: ignore
+
+        if self.settings.ibkr_primary_exchange:
+            return Stock(
+                symbol,
+                self.settings.ibkr_exchange,
+                self.settings.ibkr_currency,
+                primaryExchange=self.settings.ibkr_primary_exchange,
+            )
+        return Stock(symbol, self.settings.ibkr_exchange, self.settings.ibkr_currency)
+
     def collect_bars(self, symbols: Iterable[str], tf: str) -> List[models.Bar]:
         if self.settings.is_simulation:
             return self._generate_sim_bars(symbols, tf)
 
-        logger.warning(
-            "IBKR live collection is disabled in this environment; returning an empty result for %s",
-            tf,
+        try:
+            from ib_insync import IB  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional dependency guard
+            raise RuntimeError("ib_insync must be installed to collect live IBKR data") from exc
+
+        bars: List[models.Bar] = []
+        ib = IB()
+        logger.info(
+            "Connecting to IBKR at %s:%s (client id %s)",
+            self.settings.ibkr_host,
+            self.settings.ibkr_port,
+            self.settings.ibkr_client_id,
         )
-        return []
+        try:
+            ib.connect(
+                self.settings.ibkr_host,
+                self.settings.ibkr_port,
+                clientId=self.settings.ibkr_client_id,
+                timeout=self.settings.ibkr_connect_timeout,
+            )
+        except Exception as exc:  # pragma: no cover - network dependency
+            logger.error("Failed to connect to IBKR: %s", exc)
+            raise RuntimeError("Unable to connect to IBKR gateway") from exc
+        try:
+            duration = self._duration_for(tf)
+            bar_size = self._bar_size_for(tf)
+            for symbol in symbols:
+                contract = self._build_contract(symbol)
+                try:
+                    qualified = ib.qualifyContracts(contract)
+                except Exception as exc:  # pragma: no cover - network dependency
+                    logger.error("Failed to qualify contract for %s: %s", symbol, exc)
+                    continue
+                if not qualified:
+                    logger.warning("IBKR could not qualify contract for %s; skipping", symbol)
+                    continue
+                contract = qualified[0]
+                logger.info(
+                    "Requesting %s bars for %s (duration %s)",
+                    bar_size,
+                    symbol,
+                    duration,
+                )
+                try:
+                    hist = ib.reqHistoricalData(
+                        contract,
+                        endDateTime="",
+                        durationStr=duration,
+                        barSizeSetting=bar_size,
+                        whatToShow="TRADES",
+                        useRTH=self.settings.ibkr_use_rth,
+                        formatDate=2,
+                    )
+                except Exception as exc:  # pragma: no cover - network dependency
+                    logger.error("Historical data request failed for %s: %s", symbol, exc)
+                    continue
+                for bar in hist:
+                    dt = bar.date
+                    if isinstance(dt, str):  # pragma: no cover - defensive guard
+                        dt = datetime.fromtimestamp(int(dt))
+                    ts_epoch = to_epoch_seconds(dt)
+                    bars.append(
+                        models.Bar(
+                            symbol=symbol,
+                            tf=tf,
+                            ts=ts_epoch,
+                            o=float(bar.open),
+                            h=float(bar.high),
+                            l=float(bar.low),
+                            c=float(bar.close),
+                            v=float(bar.volume),
+                            vwap=float(bar.average) if bar.average is not None else None,
+                        )
+                    )
+        finally:
+            if ib.isConnected():
+                ib.disconnect()
+        bars.sort(key=lambda b: (b.symbol, b.ts))
+        return bars
 
     def _generate_sim_bars(self, symbols: Iterable[str], tf: str) -> List[models.Bar]:
         now = now_et()
