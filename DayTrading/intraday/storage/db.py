@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from threading import Lock
 from typing import Iterable, Sequence
 
 from ..storage import models
@@ -12,32 +13,37 @@ class Database:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._lock = Lock()
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()
 
     # Migration helpers -------------------------------------------------
     def run_migrations(self, migrations_dir: Path) -> None:
         files = sorted(p for p in migrations_dir.glob("*.sql"))
-        cursor = self.conn.cursor()
-        for file in files:
-            with file.open("r", encoding="utf-8") as fh:
-                cursor.executescript(fh.read())
-        self.conn.commit()
+        with self._lock:
+            cursor = self.conn.cursor()
+            for file in files:
+                with file.open("r", encoding="utf-8") as fh:
+                    cursor.executescript(fh.read())
+            self.conn.commit()
 
     # Generic helpers ---------------------------------------------------
     def execute(self, sql: str, params: Sequence | None = None) -> sqlite3.Cursor:
-        cur = self.conn.cursor()
-        cur.execute(sql, params or [])
-        self.conn.commit()
-        return cur
+        with self._lock:
+            cur = self.conn.cursor()
+            cur.execute(sql, params or [])
+            self.conn.commit()
+            return cur
 
     def executemany(self, sql: str, seq: Iterable[Sequence]) -> None:
-        cur = self.conn.cursor()
-        cur.executemany(sql, seq)
-        self.conn.commit()
+        with self._lock:
+            cur = self.conn.cursor()
+            cur.executemany(sql, seq)
+            self.conn.commit()
 
     # Domain operations -------------------------------------------------
     def insert_watchlist_run(self, run_ts: int, source_path: str, row_count: int) -> int:
