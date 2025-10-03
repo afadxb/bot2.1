@@ -22,8 +22,7 @@ def setup() -> tuple[AppSettings, Database, Orchestrator]:
     Path("logs").mkdir(exist_ok=True)
     configure_logging(settings.log_cfg)
     db = Database(Path(settings.sqlite_path))
-    migrations_dir = Path(__file__).parent / "intraday" / "storage" / "migrations"
-    db.run_migrations(migrations_dir)
+    db.run_migrations()
     orchestrator = Orchestrator(settings, db)
     return settings, db, orchestrator
 

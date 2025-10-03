@@ -15,10 +15,9 @@ app = typer.Typer()
 def main(path: Path = typer.Option(..., exists=True, readable=True)) -> None:
     settings = AppSettings()
     db = Database(Path(settings.sqlite_path))
-    migrations = Path(__file__).parent.parent / "intraday" / "storage" / "migrations"
-    db.run_migrations(migrations)
-    run_id, symbols, _ = load_watchlist(settings, db, path)
-    typer.echo(f"Imported run {run_id} with {len(symbols)} symbols")
+    db.run_migrations()
+    focus = load_watchlist(settings, db, path)
+    typer.echo(f"Imported {len(focus.symbols)} symbols for {focus.run_date}")
 
 
 if __name__ == "__main__":

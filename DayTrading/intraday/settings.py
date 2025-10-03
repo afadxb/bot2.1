@@ -16,8 +16,9 @@ class AppSettings:
     tz: str = "America/Toronto"
     simulation: bool = True
     watchlist_db_path: str | None = None
+    focus_run_date: str | None = None
     watchlist_symbol_key: str = "symbol"
-    sqlite_path: str = "var/daytrading.db"
+    sqlite_path: str = "premarket.db"
     ema_fast: int = 9
     ema_slow: int = 21
     vol_spike_mult: float = 2.0
@@ -50,9 +51,18 @@ class AppSettings:
 
         self.tz = env("TZ", self.tz)
         self.simulation = env("SIMULATION", str(self.simulation)).lower() == "true"
-        self.watchlist_db_path = env("WATCHLIST_DB_PATH", self.watchlist_db_path)
-        self.watchlist_symbol_key = env("WATCHLIST_SYMBOL_KEY", self.watchlist_symbol_key)
         self.sqlite_path = env("SQLITE_PATH", self.sqlite_path)
+        self.watchlist_db_path = env(
+            "WATCHLIST_DB_PATH", self.watchlist_db_path or self.sqlite_path
+        )
+        self.watchlist_symbol_key = env("WATCHLIST_SYMBOL_KEY", self.watchlist_symbol_key)
+        self.focus_run_date = env("FOCUS_RUN_DATE", self.focus_run_date)
+
+        if self.focus_run_date:
+            try:
+                datetime.fromisoformat(self.focus_run_date)
+            except ValueError as exc:  # pragma: no cover - guard clause
+                raise ValueError("FOCUS_RUN_DATE must be YYYY-MM-DD") from exc
 
         self.ema_fast = int(env("EMA_FAST", str(self.ema_fast)))
         self.ema_slow = int(env("EMA_SLOW", str(self.ema_slow)))

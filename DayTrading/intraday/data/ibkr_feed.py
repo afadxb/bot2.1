@@ -20,9 +20,7 @@ class IBKRFeed:
 
     def collect_bars(self, symbols: Iterable[str], tf: str) -> List[models.Bar]:
         if self.settings.is_simulation:
-            bars = self._generate_sim_bars(symbols, tf)
-            self.db.write_bars(bars)
-            return bars
+            return self._generate_sim_bars(symbols, tf)
 
         logger.warning(
             "IBKR live collection is disabled in this environment; returning an empty result for %s",
@@ -62,6 +60,7 @@ class IBKRFeed:
                         l=round(low_px, 2),
                         c=round(close_px, 2),
                         v=float(volume),
+                        vwap=round((open_px + high_px + low_px + close_px) / 4, 2),
                     )
                 )
         bars.sort(key=lambda b: (b.symbol, b.ts))

@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+import json
+import os
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Iterator
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from intraday.orchestrator import Orchestrator
 from intraday.settings import AppSettings
@@ -25,8 +32,8 @@ def _configure_env(tmp_path: Path) -> Iterator[None]:
 RUN_MODE=once
 SIMULATION=true
 WATCHLIST_DB_PATH={watchlist_db}
-SQLITE_PATH={db}
-""".strip().format(watchlist_db=premarket_db, db=tmp_path / "test.db"),
+SQLITE_PATH={watchlist_db}
+""".strip().format(watchlist_db=premarket_db),
         encoding="utf-8",
     )
     cwd = Path(__file__).resolve().parents[1]
@@ -43,8 +50,7 @@ def settings() -> AppSettings:
 @pytest.fixture
 def db(settings: AppSettings) -> Iterator[Database]:
     db = Database(Path(settings.sqlite_path))
-    migrations = Path(__file__).resolve().parents[1] / "intraday" / "storage" / "migrations"
-    db.run_migrations(migrations)
+    db.run_migrations()
     yield db
     db.close()
 

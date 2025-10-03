@@ -18,8 +18,17 @@ def test_trade_lifecycle(settings, db):
         }
     }
 
-    signal = RankedSignal(symbol="AAPL", score=80.0, reasons=["test"], gate="PASS")
-    trade_ids = manager.execute([signal], feature_map)
+    signal = RankedSignal(
+        symbol="AAPL",
+        base_score=80.0,
+        ai_adjustment=0.0,
+        context_bias=0.0,
+        score=80.0,
+        decision="enter_long",
+        reasons=["test"],
+        gate="PASS",
+    )
+    trade_ids = manager.execute([signal], feature_map, run_date="2024-04-01")
     assert trade_ids
 
     position = manager.positions["AAPL"].position
@@ -35,5 +44,6 @@ def test_trade_lifecycle(settings, db):
     manager.manage_open_positions(feature_map)
     assert "AAPL" not in manager.positions
 
-    status = db.execute("SELECT status FROM trades").fetchone()["status"]
-    assert status == "CLOSED"
+    journal = db.execute("SELECT reason_close, exit_price FROM trade_journal").fetchone()
+    assert journal["reason_close"] == "target hit"
+    assert journal["exit_price"] > 0

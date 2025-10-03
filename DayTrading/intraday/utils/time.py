@@ -25,3 +25,8 @@ def minutes_until(target: datetime) -> int:
 
 def hours_ago(hours: float) -> datetime:
     return now_et() - timedelta(hours=hours)
+
+
+def today_et() -> datetime:
+    now = now_et()
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
