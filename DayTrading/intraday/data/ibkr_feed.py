@@ -23,7 +23,12 @@ class IBKRFeed:
             bars = self._generate_sim_bars(symbols, tf)
             self.db.write_bars(bars)
             return bars
-        raise RuntimeError("Live IBKR collection is not supported in tests")
+
+        logger.warning(
+            "IBKR live collection is disabled in this environment; returning an empty result for %s",
+            tf,
+        )
+        return []
 
     def _generate_sim_bars(self, symbols: Iterable[str], tf: str) -> List[models.Bar]:
         now = now_et()
