@@ -4,8 +4,9 @@ import json
 import logging
 import sqlite3
 from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from ..settings import AppSettings
 from ..storage.db import Database
@@ -47,14 +48,21 @@ _FEATURE_FIELDS = {
 }
 
 
+@dataclass(slots=True)
+class FocusList:
+    run_date: str
+    generated_at: str
+    symbols: List[str]
+    context: Dict[str, Dict[str, object]]
+    ranks: Dict[str, int | None]
+
+
 class WatchlistLoader:
     def __init__(self, settings: AppSettings, db: Database) -> None:
         self.settings = settings
         self.db = db
 
-    def load(
-        self, path: Path | None = None
-    ) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
+    def load(self, path: Path | None = None) -> FocusList:
         if path is not None:
             logger.info("Loading watchlist from JSON file: %s", path)
             return self._load_from_json(path)
@@ -101,11 +109,18 @@ class WatchlistLoader:
             deduped[symbol] = raw
             flat_map[symbol] = self._build_flat_context(normalized)
 
-        return self._persist_run(str(path), deduped, flat_map)
+        run_date = self.settings.focus_run_date or time_utils.today_et().strftime("%Y-%m-%d")
+        return FocusList(
+            run_date=run_date,
+            generated_at=str(path),
+            symbols=list(deduped.keys()),
+            context=flat_map,
+            ranks={symbol: None for symbol in deduped.keys()},
+        )
 
     def _load_from_sqlite(
         self, db_path: Path
-    ) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
+    ) -> FocusList:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -119,7 +134,7 @@ class WatchlistLoader:
             if latest_watchlist is None and latest_full is None:
                 raise ValueError("No watchlist data found in database")
 
-            run_date = (latest_watchlist or latest_full)["run_date"]
+            run_date = self.settings.focus_run_date or (latest_watchlist or latest_full)["run_date"]
             generated_at = (latest_watchlist or latest_full)["generated_at"]
 
             watch_rows = conn.execute(
@@ -208,6 +223,7 @@ class WatchlistLoader:
 
             deduped: "OrderedDict[str, dict]" = OrderedDict()
             flat_map: Dict[str, Dict[str, object]] = {}
+            rank_map: Dict[str, int | None] = {}
 
             for symbol in symbol_order:
                 payload: dict = {}
@@ -227,8 +243,15 @@ class WatchlistLoader:
                 flat_map[symbol] = self._build_flat_context(
                     {k.lower(): v for k, v in payload.items()}
                 )
+                rank_map[symbol] = _safe_int(payload.get("rank"))
 
-            return self._persist_run(str(db_path), deduped, flat_map)
+            return FocusList(
+                run_date=run_date,
+                generated_at=str(generated_at),
+                symbols=list(deduped.keys()),
+                context=flat_map,
+                ranks=rank_map,
+            )
         finally:
             conn.close()
 
@@ -273,24 +296,15 @@ class WatchlistLoader:
                 return text
         return value
 
-    def _persist_run(
-        self,
-        source: str,
-        deduped: "OrderedDict[str, dict]",
-        flat_map: Dict[str, Dict[str, object]],
-    ) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
-        run_ts = time_utils.to_epoch_seconds(time_utils.now_et())
-        row_count = len(deduped)
-        run_id = self.db.insert_watchlist_run(run_ts, source, row_count)
-        logger.info(
-            "Persisted watchlist run %s from %s with %d symbols", run_id, source, row_count
-        )
-        self.db.insert_watchlist_items(
-            run_id, ((symbol, payload) for symbol, payload in deduped.items())
-        )
-        return run_id, list(deduped.keys()), flat_map
-
-
-def load_watchlist(settings: AppSettings, db: Database, path: Path | None = None) -> tuple[int, list[str], Dict[str, Dict[str, object]]]:
+def load_watchlist(settings: AppSettings, db: Database, path: Path | None = None) -> FocusList:
     loader = WatchlistLoader(settings, db)
     return loader.load(path)
+
+
+def _safe_int(value: object) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None

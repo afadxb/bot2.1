@@ -7,7 +7,11 @@ from ..storage import models
 from . import indicators
 
 
-def build_snapshot(bars: Iterable[models.Bar], context: Dict[str, Dict[str, object]], settings: AppSettings) -> Dict[str, Dict[str, float]]:
+def build_snapshot(
+    bars: Iterable[models.Bar],
+    context: Dict[str, Dict[str, object]],
+    settings: AppSettings,
+) -> Dict[str, Dict[str, object]]:
     grouped: Dict[str, List[models.Bar]] = {}
     for bar in bars:
         grouped.setdefault(bar.symbol, []).append(bar)

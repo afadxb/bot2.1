@@ -8,19 +8,21 @@ from intraday.utils.time import now_et, to_epoch_seconds
 def test_sentiment_heuristic_scores(settings, db):
     analyzer = SentimentAnalyzer(settings, db)
     news = [
-        models.NewsItem(
+        models.Catalyst(
             symbol="AAPL",
-            source="test",
-            headline="Company announces strong upgrade and record growth",
-            url="",
             ts=to_epoch_seconds(now_et()),
+            kind="headline",
+            title="Company announces strong upgrade and record growth",
+            source="test",
+            url="",
         ),
-        models.NewsItem(
+        models.Catalyst(
             symbol="TSLA",
-            source="test",
-            headline="Manufacturer faces lawsuit and weak outlook",
-            url="",
             ts=to_epoch_seconds(now_et()),
+            kind="headline",
+            title="Manufacturer faces lawsuit and weak outlook",
+            source="test",
+            url="",
         ),
     ]
     result = analyzer.analyze(news)
