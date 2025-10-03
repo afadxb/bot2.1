@@ -30,9 +30,21 @@ class Database:
 
         with self._lock:
             self._apply_phase2_backfills()
-            self.conn.executescript(PHASE2_SCHEMA)
+            try:
+                self.conn.executescript(PHASE2_SCHEMA)
+            except sqlite3.OperationalError as exc:
+                if "no such column: ts" not in str(exc).lower():
+                    raise
 
-    def _apply_phase2_backfills(self) -> None:
+                # Some legacy deployments may have unexpected ``bars_intraday``
+                # layouts that failed the opportunistic ``ts`` backfill.  Force
+                # a rebuild of the table and retry the migration so Phase 2 can
+                # complete instead of crashing at startup.
+                self.conn.rollback()
+                self._apply_phase2_backfills(force_rebuild=True)
+                self.conn.executescript(PHASE2_SCHEMA)
+
+    def _apply_phase2_backfills(self, *, force_rebuild: bool = False) -> None:
         """Bring forward legacy Phase 1 tables so Phase 2 migrations succeed."""
 
         # ``bars_intraday`` is the only Phase 2 table that previously existed in a
@@ -63,19 +75,20 @@ class Database:
             self.conn.execute("DROP INDEX IF EXISTS idx_bars_intraday_timestamp")
 
             renamed = False
-            try:
-                self.conn.execute("ALTER TABLE bars_intraday RENAME COLUMN timestamp TO ts")
-                renamed = True
-            except sqlite3.OperationalError:
-                # Older SQLite versions bundled with Python on Windows do not
-                # support renaming individual columns.  We'll rebuild the table
-                # below if the rename fails.
-                self.conn.rollback()
+            if not force_rebuild:
+                try:
+                    self.conn.execute("ALTER TABLE bars_intraday RENAME COLUMN timestamp TO ts")
+                    renamed = True
+                except sqlite3.OperationalError:
+                    # Older SQLite versions bundled with Python on Windows do not
+                    # support renaming individual columns.  We'll rebuild the table
+                    # below if the rename fails.
+                    self.conn.rollback()
 
             cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
             columns = {row[1] for row in cur.fetchall()}
 
-            if "ts" not in columns:
+            if force_rebuild or "ts" not in columns:
                 self._rebuild_bars_intraday_with_ts()
                 renamed = True
 
@@ -88,6 +101,11 @@ class Database:
 
             cur = self.conn.execute("PRAGMA table_info(bars_intraday)")
             columns = {row[1] for row in cur.fetchall()}
+
+        if "ts" not in columns:
+            raise sqlite3.OperationalError(
+                "bars_intraday table is missing required ts column and could not be backfilled"
+            )
 
         additions = (
             ("source", "ALTER TABLE bars_intraday ADD COLUMN source TEXT DEFAULT 'IBKR'"),
